@@ -36,10 +36,10 @@ class CFG:
 
     # training
     EPOCHS = 20
-    TRAIN_BS = 8             # adjust per GPU memory
-    VALID_BS = 8
+    TRAIN_BS = 4             # adjust per GPU memory
+    VALID_BS = 4
     ACCUM_STEPS = 1
-    NUM_WORKERS = 4
+    NUM_WORKERS = 2
     AMP = True
 
     # optimizer / schedule
