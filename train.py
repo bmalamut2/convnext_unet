@@ -64,10 +64,6 @@ class CFG:
         "tu-convnext_base",
         "timm-convnext_base",
         "convnext_base",
-        "mit_b4",
-        "mit_b3",
-        "efficientnet-b4",
-        "resnet34",
     ]
     ENCODER_WEIGHTS = "imagenet"   # ImageNet pretraining
     IN_CHANNELS = 1
