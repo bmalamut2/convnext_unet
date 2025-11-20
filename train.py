@@ -59,8 +59,16 @@ class CFG:
     BIN_THR     = 0.30        # binarization threshold for final mask
 
     # model
-    # SMP uses timm encoders; current docs use the `tu-` prefix (e.g., `tu-convnext_base`) [ref].
-    ENCODER_CANDIDATES = ["tu-convnext_base", "timm-convnext_base", "convnext_base"]
+    # SMP uses timm encoders; include several fallback families for older pkg versions.
+    ENCODER_CANDIDATES = [
+        "tu-convnext_base",
+        "timm-convnext_base",
+        "convnext_base",
+        "mit_b4",
+        "mit_b3",
+        "efficientnet-b4",
+        "resnet34",
+    ]
     ENCODER_WEIGHTS = "imagenet"   # ImageNet pretraining
     IN_CHANNELS = 1
     CLASSES = 1
@@ -125,11 +133,34 @@ def build_image_index(root: Path) -> Dict[str, Path]:
         raise FileNotFoundError("No images found (PNG/JPG or DICOM). Check DATA_ROOT.")
     return mapping
 
+def normalize_rle_encoding(enc) -> Optional[str]:
+    if enc is None:
+        return None
+    if isinstance(enc, float) and np.isnan(enc):
+        return None
+    s = str(enc).strip()
+    if s == "" or s == "-1":
+        return None
+    return s
+
+def normalize_rle_list(enc_list: List[str]) -> List[str]:
+    cleaned: List[str] = []
+    for enc in enc_list:
+        norm = normalize_rle_encoding(enc)
+        if norm is not None:
+            cleaned.append(norm)
+    return cleaned
+
 def rle_decode(rle_str: str, shape: Tuple[int, int]) -> np.ndarray:
     """Decode RLE as (height, width) binary mask. RLE is 'start length start length ...'"""
     h, w = shape
     mask = np.zeros(h * w, dtype=np.uint8)
-    if rle_str == "-1" or (isinstance(rle_str, float) and np.isnan(rle_str)):
+    if isinstance(rle_str, float):
+        if np.isnan(rle_str):
+            return mask.reshape(h, w)
+        rle_str = str(rle_str)
+    rle_str = str(rle_str).strip()
+    if rle_str == "-1" or rle_str == "":
         return mask.reshape(h, w)
     s = list(map(int, rle_str.strip().split()))
     starts, lengths = s[0::2], s[1::2]
@@ -140,6 +171,7 @@ def rle_decode(rle_str: str, shape: Tuple[int, int]) -> np.ndarray:
 
 def build_masks_for_id(enc_list: List[str], shape: Tuple[int, int]) -> np.ndarray:
     """Combine multiple RLE rows for one image id into one mask."""
+    enc_list = normalize_rle_list(enc_list)
     if len(enc_list) == 0:
         return np.zeros(shape, np.uint8)
     out = np.zeros(shape, np.uint8)
@@ -252,10 +284,10 @@ def build_model() -> nn.Module:
                 kwargs["decoder_attention_type"] = attention
             try:
                 model = smp.UnetPlusPlus(**kwargs)
-                if _has_invalid_conv(model):
-                    print(f"[Model] encoder={name} attention={attention or 'none'} yielded empty conv weights; retrying without attention.")
-                    continue
                 att_label = attention if attention else "none"
+                if _has_invalid_conv(model):
+                    print(f"[Model] encoder={name} attention={att_label} produced zero-channel convs; trying next option.")
+                    continue
                 print(f"[Model] Using encoder_name={name}, attention={att_label}")
                 return model
             except Exception as ex:
@@ -387,10 +419,8 @@ def build_dataframe(rle_csv: Path, id2path: Dict[str, Path]) -> pd.DataFrame:
 
     # keep only those we can find on disk
     grouped = grouped[grouped["ImageId"].isin(id2path.keys())].copy()
-    # binary target for stratification
-    def has_pos(enc_list): 
-        return int(any(e != "-1" and not (isinstance(e, float) and np.isnan(e)) for e in enc_list))
-    grouped["HasMask"] = grouped["Encodings"].apply(has_pos)
+    grouped["Encodings"] = grouped["Encodings"].apply(normalize_rle_list)
+    grouped["HasMask"] = grouped["Encodings"].apply(lambda enc_list: int(len(enc_list) > 0))
     return grouped
 
 def main():
