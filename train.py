@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict
 warnings.filterwarnings("ignore")
 
+BASE_PATH = Path(__file__).resolve().parent
+
 import numpy as np
 import pandas as pd
 import cv2
@@ -18,8 +20,8 @@ from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
 
 class CFG:
-    DATA_ROOT = Path("/kaggle/input/siim-acr-pneumothorax-segmentation-data")  # <-- set me
-    WORK_DIR  = Path("./outputs")                                              # <-- set me
+    DATA_ROOT = Path(os.environ.get("DATA_ROOT", BASE_PATH / "pneumothorax"))  # default dataset bundle
+    WORK_DIR  = Path(os.environ.get("WORK_DIR", BASE_PATH / "outputs"))        # store outputs next to script
     CSV_CANDIDATES = ["train-rle.csv", "stage_2_train.csv"]  # common names
     IMG_EXTS = (".png", ".jpg", ".jpeg")
     DCM_EXT  = ".dcm"
