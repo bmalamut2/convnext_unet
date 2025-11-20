@@ -235,6 +235,7 @@ class PneumoDataset(Dataset):
             img, mask = data["image"], data["mask"]
             if mask.ndim == 2:
                 mask = mask.unsqueeze(0)
+            mask = mask.float()
         else:
             img = torch.from_numpy(img.transpose(2, 0, 1)).float() / 255.0
             mask = torch.from_numpy(mask[None]).float()
