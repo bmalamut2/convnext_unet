@@ -229,39 +229,38 @@ def get_valid_transforms():
         ToTensorV2(transpose_mask=True),
     ])
 
+def _has_invalid_conv(model: nn.Module) -> bool:
+    for module in model.modules():
+        if isinstance(module, nn.Conv2d) and module.out_channels <= 0:
+            return True
+    return False
+
 def build_model() -> nn.Module:
     aux_params = dict(pooling="avg", dropout=CFG.DROPOUT, classes=1, activation=None)
     last_ex = None
+    attention_candidates = [CFG.DECODER_ATTENTION, None] if CFG.DECODER_ATTENTION else [None]
     for name in CFG.ENCODER_CANDIDATES:
-        try:
-            model = smp.UnetPlusPlus(
+        for attention in attention_candidates:
+            kwargs = dict(
                 encoder_name=name,
                 encoder_weights=CFG.ENCODER_WEIGHTS,
                 in_channels=CFG.IN_CHANNELS,
                 classes=CFG.CLASSES,
-                decoder_attention_type=CFG.DECODER_ATTENTION,
-                aux_params=aux_params
+                aux_params=aux_params,
             )
-            print(f"[Model] Using encoder_name={name}")
-            return model
-        except Exception as ex:
-            last_ex = ex
-            continue
-    # fallback without attention
-    for name in CFG.ENCODER_CANDIDATES:
-        try:
-            model = smp.UnetPlusPlus(
-                encoder_name=name,
-                encoder_weights=CFG.ENCODER_WEIGHTS,
-                in_channels=CFG.IN_CHANNELS,
-                classes=CFG.CLASSES,
-                aux_params=aux_params
-            )
-            print(f"[Model] Using encoder_name={name} (no decoder attention)")
-            return model
-        except Exception as ex:
-            last_ex = ex
-            continue
+            if attention:
+                kwargs["decoder_attention_type"] = attention
+            try:
+                model = smp.UnetPlusPlus(**kwargs)
+                if _has_invalid_conv(model):
+                    print(f"[Model] encoder={name} attention={attention or 'none'} yielded empty conv weights; retrying without attention.")
+                    continue
+                att_label = attention if attention else "none"
+                print(f"[Model] Using encoder_name={name}, attention={att_label}")
+                return model
+            except Exception as ex:
+                last_ex = ex
+                continue
     raise RuntimeError(f"Could not construct model with ConvNeXt encoders. Last error: {last_ex}")
 
 class DiceLoss(nn.Module):
